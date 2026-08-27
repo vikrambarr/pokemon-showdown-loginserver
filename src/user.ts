@@ -18,7 +18,7 @@ import {
 	ladder, loginthrottle, loginattempts, sessions, users, usermodlog,
 } from './tables.ts';
 
-const SID_DURATION = 2 * 7 * 24 * 60 * 60;
+export const SID_DURATION = 2 * 7 * 24 * 60 * 60;
 const LOGINTIME_INTERVAL = 24 * 60 * 60;
 
 export class User {
@@ -261,7 +261,10 @@ export class Session {
 				if (userstate.email?.endsWith('@')) {
 					return ';;@gmail';
 				}
-				return ';';
+				return Config.discordonly ? ';;@discord' : ';';
+			} else if (Config.discordonly && !user.loggedIn) {
+				// Unregistered username; logged-in users fall through, so nicknames keep working.
+				return ';;@discord';
 			} else {
 				// Unregistered username.
 				userType = '1';
