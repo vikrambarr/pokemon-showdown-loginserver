@@ -146,7 +146,6 @@ function exportTeam(team: string) {
 
 export const actions: { [k: string]: QueryHandler } = {
 	async register(params) {
-		// on a discordonly server the password actions are left to registered servers
 		if (Config.discordonly) await this.requireServer();
 		this.verifyCrossDomainRequest();
 		const { username, password, cpassword, captcha } = params;
@@ -791,9 +790,6 @@ export const actions: { [k: string]: QueryHandler } = {
 	},
 
 	// logging in WITH Discord, as opposed to the oauth/ actions above
-	// discord/login - send the user to Discord
-	// discord/callback - where Discord sends them back
-	// discord/api/register - name the account, first login only
 	'discord/login'(params) {
 		const challstr = params.challstr || params.challenge || "";
 		if (!challstr) {
@@ -812,30 +808,20 @@ export const actions: { [k: string]: QueryHandler } = {
 			throw new ActionError("No code provided.");
 		}
 		const { challstr, serverid } = Discord.unseal(params.state);
-		// getAssertion needs it to name the sim server, and Discord's redirect can't carry it
+		// Discord's redirect can't carry it, and getAssertion needs it to name the sim server
 		params.serverid = serverid;
 
 		const accessToken = await Discord.exchangeCode(params.code);
 		await Discord.requireGuildMember(accessToken);
 		const discordUser = await Discord.fetchUser(accessToken);
-
 		const account = await Discord.getLinkedUser(discordUser.id);
-		let values;
-		if (account) {
-			await Discord.logIn(this, account.userid, account.username);
-			values = {
-				username: account.username,
-				assertion: await this.session.getAssertion(
-					account.userid, Config.challengekeyid, null, challstr
-				),
-			};
-		} else {
-			// first login - the challstr rides in the ticket so it survives the signup form
-			values = {
-				ticket: Discord.seal({ discordid: discordUser.id, challstr, serverid }),
-				suggestion: Discord.suggestName(discordUser),
-			};
-		}
+		const values = account ? {
+			username: account.username,
+			assertion: await Discord.logIn(this, account.username, challstr),
+		} : {
+			ticket: Discord.seal({ discordid: discordUser.id, challstr, serverid }),
+			suggestion: Discord.suggestName(discordUser),
+		};
 
 		this.response.setHeader('Content-Type', 'text/html');
 		try {
@@ -859,10 +845,9 @@ export const actions: { [k: string]: QueryHandler } = {
 		params.serverid = serverid; // see discord/callback
 		const username = params.username || "";
 		const userid = await Discord.link(discordid, username, this.getIp());
-		await Discord.logIn(this, userid, username);
 		return {
 			actionsuccess: true,
-			assertion: await this.session.getAssertion(userid, Config.challengekeyid, null, challstr),
+			assertion: await Discord.logIn(this, username, challstr),
 			curuser: { loggedin: true, username, userid },
 		};
 	},

@@ -18,7 +18,7 @@ import {
 	ladder, loginthrottle, loginattempts, sessions, users, usermodlog,
 } from './tables.ts';
 
-export const SID_DURATION = 2 * 7 * 24 * 60 * 60;
+const SID_DURATION = 2 * 7 * 24 * 60 * 60;
 const LOGINTIME_INTERVAL = 24 * 60 * 60;
 
 export class User {
@@ -147,11 +147,9 @@ export class Session {
 		return this.login(username, password);
 	}
 	async login(name: string, pass: string) {
-		const curTime = time();
 		const user = await this.context.getUser();
 		await this.logout();
-		const userid = toID(name);
-		const info = await users.get(userid);
+		const info = await users.get(toID(name));
 		if (!info) {
 			// unregistered. just do the thing
 			return user.login(name);
@@ -162,15 +160,20 @@ export class Session {
 		if (!verified) {
 			throw new ActionError('Wrong password.');
 		}
-		const timeout = (curTime + SID_DURATION);
-		const ip = this.context.getIp();
+		return this.createSession(name);
+	}
+	/** Starts a session for an already-authenticated user. */
+	async createSession(name: string) {
+		const user = await this.context.getUser();
+		await this.logout();
+		const curTime = time();
 		const sidhash = this.sidhash = await this.makeSid();
 		const res = await sessions.insert({
-			userid,
+			userid: toID(name),
 			sid: await bcrypt.hash(sidhash, Config.passwordSalt),
-			time: time(),
-			timeout,
-			ip,
+			time: curTime,
+			timeout: curTime + SID_DURATION,
+			ip: this.context.getIp(),
 		});
 		this.session = res.insertId || 0;
 		return user.login(name);
