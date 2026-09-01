@@ -3,7 +3,6 @@
  */
 import { strict as assert } from 'node:assert';
 import * as crypto from 'node:crypto';
-import * as http from 'node:http';
 import { after, before, beforeEach, suite, test } from 'node:test';
 
 import { Config } from '../config-loader.ts';
@@ -11,79 +10,11 @@ import { Discord } from '../discord.ts';
 import { Server } from '../server.ts';
 import * as tables from '../tables.ts';
 import { time } from '../utils.ts';
+import { closeServer, httpRequest, parseResponse, waitForListening } from './test-utils.ts';
 
 const DISCORD_ID = '123456789012345678';
 const CLIENT_ID = '987654321098765432';
 const REDIRECT_URI = 'https://play.example/api/discord/callback';
-
-async function waitForListening(server: Server) {
-	await new Promise<void>((resolve, reject) => {
-		const cleanup = () => {
-			server.server.off('listening', onListening);
-			server.server.off('error', onError);
-		};
-		const onListening = () => {
-			cleanup();
-			resolve();
-		};
-		const onError = (error: Error) => {
-			cleanup();
-			reject(error);
-		};
-		server.server.once('listening', onListening);
-		server.server.once('error', onError);
-	});
-}
-
-async function closeServer(server: Server) {
-	await new Promise<void>(resolve => {
-		server.server.close(() => resolve());
-	});
-}
-
-async function httpRequest(
-	server: Server,
-	path: string,
-	options: {
-		method?: string,
-		headers?: http.OutgoingHttpHeaders,
-		body?: string,
-	} = {}
-) {
-	const address = server.server.address();
-	assert(address && typeof address === 'object');
-	return new Promise<{
-		statusCode: number | undefined,
-		body: string,
-		headers: http.IncomingHttpHeaders,
-	}>((resolve, reject) => {
-		const req = http.request({
-			host: '127.0.0.1',
-			port: address.port,
-			path,
-			method: options.method,
-			headers: options.headers,
-		}, response => {
-			let body = '';
-			response.setEncoding('utf8');
-			response.on('data', chunk => {
-				body += chunk;
-			});
-			response.on('end', () => resolve({
-				statusCode: response.statusCode,
-				body,
-				headers: response.headers,
-			}));
-		});
-		req.on('error', reject);
-		req.end(options.body);
-	});
-}
-
-function parseResponse(body: string) {
-	assert.equal(body.charAt(0), ']');
-	return JSON.parse(body.slice(1));
-}
 
 void suite('Discord login', () => {
 	let server: Server;
