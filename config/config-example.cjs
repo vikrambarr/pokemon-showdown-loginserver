@@ -52,14 +52,12 @@ exports.friendsdb = null;
 /** For 2FA verification. */
 exports.gapi_clientid = '';
 
-/**
- * For logging in with Discord. `guildid`, if set, restricts logins to that Discord server's members.
+/** For logging in with Discord. `guildid` restricts logins to that Discord server's members.
  * @type {{clientid: string, clientsecret: string, redirecturi: string, guildid?: string | null} | null}
  */
 exports.discord = null;
 
-/**
- * Log in with Discord and nothing else: the password actions are left to registered servers.
+/** Log in with Discord and nothing else - the password actions are left to registered servers.
  * @type {boolean}
  */
 exports.discordonly = false;

@@ -16,7 +16,7 @@ export type DiscordUser = {
 	global_name: string | null,
 };
 
-type TicketValues = { username?: string, assertion?: string, ticket?: string, suggestion?: string };
+type CallbackValues = { username?: string, assertion?: string, ticket?: string, suggestion?: string };
 
 export const Discord = new class {
 	readonly authorizeURL = 'https://discord.com/oauth2/authorize';
@@ -48,19 +48,13 @@ export const Discord = new class {
 	}
 
 	unseal(sealed?: string): { [k: string]: string } {
-		const [data, signature] = (sealed || '').split('.');
-		if (!data || !signature) throw new ActionError("Your Discord login expired. Please try again.");
+		const [data, signature = ''] = (sealed || '').split('.');
 		const expected = Buffer.from(this.sign(data));
 		const given = Buffer.from(signature);
-		let payload;
-		try {
-			if (expected.length === given.length && crypto.timingSafeEqual(expected, given)) {
-				payload = JSON.parse(Buffer.from(data, 'base64url').toString());
-			}
-		} catch {}
-		if (!payload) {
+		if (!data || expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
 			throw new ActionError("Your Discord login could not be verified. Please try again.");
 		}
+		const payload = JSON.parse(Buffer.from(data, 'base64url').toString());
 		if (time() - Number(payload.time) > this.ticketTime) {
 			throw new ActionError("Your Discord login expired. Please try again.");
 		}
@@ -122,10 +116,9 @@ export const Discord = new class {
 
 	suggestName(user: DiscordUser) {
 		for (const candidate of [user.username, user.global_name]) {
-			const userid = toID(candidate).slice(0, 18);
-			if (/[a-z]/.test(userid) && !userid.startsWith('guest') && Session.isUseridAllowed(userid)) {
-				return userid;
-			}
+			try {
+				return this.validateName(toID(candidate).slice(0, 18));
+			} catch {}
 		}
 		return '';
 	}
@@ -152,7 +145,7 @@ export const Discord = new class {
 
 	async link(discordid: string, username: string, ip: string) {
 		const userid = this.validateName(username);
-		// no password hash - passwordVerify already refuses anyone without one
+		// no passwordhash; passwordVerify refuses anyone without one
 		const user = await tables.users.insertIgnore({
 			userid, username, passwordhash: null, email: null, registertime: time(), ip,
 		});
@@ -161,7 +154,7 @@ export const Discord = new class {
 		}
 		const link = await tables.discordLinks.insertIgnore({ discordid, userid, time: time() });
 		if (!link.affectedRows) {
-			// double submit; only reachable for the row we just created
+			// only the name we just made can be orphaned here
 			await tables.users.delete(userid);
 			throw new ActionError(`This Discord account is already linked to an account.`);
 		}
@@ -174,9 +167,11 @@ export const Discord = new class {
 		return context.session.getAssertion(toID(username), Config.challengekeyid, null, challstr);
 	}
 
-	renderCallbackPage(values: TicketValues) {
-		return this.callbackPage.replace(
-			/\{\{(\w+)\}\}/g, (match, key: keyof TicketValues) => escapeHTML(values[key] || '')
-		);
+	renderCallbackPage(values: CallbackValues) {
+		return this.callbackPage
+			.replace(/\{\{username\}\}/g, escapeHTML(values.username || ''))
+			.replace(/\{\{assertion\}\}/g, escapeHTML(values.assertion || ''))
+			.replace(/\{\{ticket\}\}/g, escapeHTML(values.ticket || ''))
+			.replace(/\{\{suggestion\}\}/g, escapeHTML(values.suggestion || ''));
 	}
 };

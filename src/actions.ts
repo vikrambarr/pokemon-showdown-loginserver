@@ -808,13 +808,12 @@ export const actions: { [k: string]: QueryHandler } = {
 			throw new ActionError("No code provided.");
 		}
 		const { challstr, serverid } = Discord.unseal(params.state);
-		// Discord's redirect can't carry it, and getAssertion needs it to name the sim server
+		// the Discord redirect can't carry it, and getAssertion names the sim server with it
 		params.serverid = serverid;
 
 		const accessToken = await Discord.exchangeCode(params.code);
-		const [, discordUser] = await Promise.all([
-			Discord.requireGuildMember(accessToken), Discord.fetchUser(accessToken),
-		]);
+		await Discord.requireGuildMember(accessToken);
+		const discordUser = await Discord.fetchUser(accessToken);
 		const account = await Discord.getLinkedUser(discordUser.id);
 		const values = account ? {
 			username: account.username,
@@ -848,9 +847,8 @@ export const actions: { [k: string]: QueryHandler } = {
 		const userid = await Discord.link(discordid, username, this.getIp());
 		const assertion = await Discord.logIn(this, username, challstr);
 		return {
-			// `getAssertion` refuses with `;;<reason>` rather than throwing: see `register`
-			actionsuccess: !assertion.startsWith(';'),
 			assertion,
+			actionsuccess: !assertion.startsWith(';'),
 			curuser: { loggedin: true, username, userid },
 		};
 	},

@@ -149,7 +149,8 @@ export class Session {
 	async login(name: string, pass: string) {
 		const user = await this.context.getUser();
 		await this.logout();
-		const info = await users.get(toID(name));
+		const userid = toID(name);
+		const info = await users.get(userid);
 		if (!info) {
 			// unregistered. just do the thing
 			return user.login(name);
@@ -164,16 +165,19 @@ export class Session {
 	}
 	/** Starts a session for an already-authenticated user. */
 	async createSession(name: string) {
+		const curTime = time();
 		const user = await this.context.getUser();
 		await this.logout();
-		const curTime = time();
+		const userid = toID(name);
+		const timeout = (curTime + SID_DURATION);
+		const ip = this.context.getIp();
 		const sidhash = this.sidhash = await this.makeSid();
 		const res = await sessions.insert({
-			userid: toID(name),
+			userid,
 			sid: await bcrypt.hash(sidhash, Config.passwordSalt),
-			time: curTime,
-			timeout: curTime + SID_DURATION,
-			ip: this.context.getIp(),
+			time: time(),
+			timeout,
+			ip,
 		});
 		this.session = res.insertId || 0;
 		return user.login(name);
@@ -266,7 +270,7 @@ export class Session {
 				}
 				return Config.discordonly ? ';;@discord' : ';';
 			} else if (Config.discordonly && !user.loggedIn) {
-				// Unregistered username; logged-in users fall through, so nicknames keep working.
+				// logged-in users fall through, so nicknames keep working
 				return ';;@discord';
 			} else {
 				// Unregistered username.
