@@ -9,6 +9,7 @@ import * as pathModule from 'node:path';
 import * as crypto from 'node:crypto';
 import * as module from 'node:module';
 import { Config } from './config-loader.ts';
+import { discordActions } from './discord.ts';
 import { Ladder, type LadderEntry } from './ladder.ts';
 import { OAuth } from './oauth.ts';
 import { Replays } from './replays.ts';
@@ -145,6 +146,7 @@ function exportTeam(team: string) {
 
 export const actions: { [k: string]: QueryHandler } = {
 	async register(params) {
+		if (Config.discordonly) await this.requireServer();
 		this.verifyCrossDomainRequest();
 		const { username, password, cpassword, captcha } = params;
 		if (!username) {
@@ -205,6 +207,7 @@ export const actions: { [k: string]: QueryHandler } = {
 	},
 
 	async login(params) {
+		if (Config.discordonly) await this.requireServer();
 		this.setPrefix('');
 		const challengeprefix = this.verifyCrossDomainRequest();
 		if (this.request.method !== 'POST') {
@@ -349,6 +352,7 @@ export const actions: { [k: string]: QueryHandler } = {
 	},
 
 	async changepassword(params) {
+		if (Config.discordonly) await this.requireServer();
 		if (this.request.method !== 'POST') {
 			throw new ActionError(`'changepassword' requests can only be made with POST data.`);
 		}
@@ -1402,6 +1406,8 @@ export const actions: { [k: string]: QueryHandler } = {
 		return { success: true };
 	},
 };
+
+Object.assign(actions, discordActions);
 
 if (Config.actions) {
 	Object.assign(actions, Config.actions);

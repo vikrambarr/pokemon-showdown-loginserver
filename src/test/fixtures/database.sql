@@ -64,6 +64,12 @@ CREATE TABLE oauth_tokens (
 	time INTEGER NOT NULL
 );
 
+CREATE TABLE discord (
+	userid TEXT PRIMARY KEY,
+	discordid TEXT NOT NULL,
+	time INTEGER NOT NULL
+);
+
 CREATE TABLE usermodlog (
 	entryid INTEGER PRIMARY KEY AUTOINCREMENT,
 	userid TEXT NOT NULL,

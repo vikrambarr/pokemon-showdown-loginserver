@@ -15,7 +15,7 @@ import { SQL } from './database.ts';
 import { ActionError, type ActionContext } from './server.ts';
 import { toID, time, signAsync } from './utils.ts';
 import {
-	ladder, loginthrottle, loginattempts, sessions, users, usermodlog,
+	discordLinks, ladder, loginthrottle, loginattempts, sessions, users, usermodlog,
 } from './tables.ts';
 
 const SID_DURATION = 2 * 7 * 24 * 60 * 60;
@@ -204,14 +204,18 @@ export class Session {
 			forceUsertype = '5';
 		}
 		let userType;
-		const userData = user.loggedIn ? await users.get(user.id, SQL`banstate, registertime, logintime`) : null;
+		const ownsName = user.loggedIn === userid || !!user.loggedIn && !!await discordLinks.selectOne()`
+			WHERE userid = ${userid} AND discordid = (
+				SELECT discordid FROM "${discordLinks.name}" WHERE userid = ${user.loggedIn}
+			)`;
+		const userData = ownsName ? await users.get(userid, SQL`banstate, registertime, logintime`) : null;
 		const { banstate, group, registertime, logintime } = userData || {
 			banstate: 0, registertime: 0, logintime: 0, group: 0,
 		};
 		const server = await this.context.getServer();
 		const serverHost = server?.server || 'sim3.psim.us';
 
-		if (user.loggedIn === userid) {
+		if (ownsName) {
 			// already logged in
 			userType = '2';
 			if (user.isSysop()) {
@@ -263,12 +267,15 @@ export class Session {
 				if (userstate.email?.endsWith('@')) {
 					return ';;@gmail';
 				}
-				return ';';
+				return Config.discordonly ? ';;This name needs a Discord login.' : ';';
+			} else if (Config.discordonly && !user.loggedIn) {
+				return ';;This name needs a Discord login.';
 			} else {
 				// Unregistered username.
 				userType = '1';
 				if (forceUsertype) userType = forceUsertype;
 				data = `${userid},${userType},${time()},${serverHost}`;
+				if (user.loggedIn) data += `,${user.loggedIn}`;
 			}
 		}
 		let splitChallenge: string[] = [];
