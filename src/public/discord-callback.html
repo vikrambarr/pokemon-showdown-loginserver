@@ -61,7 +61,7 @@
 
 		function finish(username, assertion) {
 			if (!window.opener) {
-				return stop("Logged in as " + username + ". You can close this window and reload Pokémon Showdown.");
+				return stop("Logged in as " + username + ". You can close this window and reload Pokemon Showdown.");
 			}
 			window.opener.postMessage({
 				type: 'discord-login', username: username, assertion: assertion,
