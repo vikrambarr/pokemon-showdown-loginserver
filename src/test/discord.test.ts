@@ -115,6 +115,17 @@ void suite('Discord login', () => {
 		assert.equal(JSON.parse((await upkeep.text()).slice(1)).username, 'DiscordFixture');
 	});
 
+	void test('keeps the session when a parent domain sends its own sid', async () => {
+		const { cookie } = await register(ticket(), 'DiscordFixture');
+		const own = cookie.split(';')[0];
+		const foreign = `sid=${encodeURIComponent('DiscordFixture,1,notthesid')}`;
+		for (const header of [`${foreign}; ${own}`, `${own}; ${foreign}`]) {
+			const upkeep = await fetch(`${origin}/api/upkeep?challstr=discordchallenge`, { headers: { cookie: header } });
+			assert.equal(JSON.parse((await upkeep.text()).slice(1)).username, 'DiscordFixture');
+			assert.equal(upkeep.headers.getSetCookie().length, 0);
+		}
+	});
+
 	void test('refuses bad registrations', async () => {
 		assert((await register(ticket(), 'DiscordFixture')).result.actionsuccess);
 		for (const [sealed, name, error] of [

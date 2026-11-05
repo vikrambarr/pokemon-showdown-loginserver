@@ -217,3 +217,21 @@ export const discordActions: { [k: string]: QueryHandler } = {
 		return { discordid, names: links.map(link => link.userid) };
 	},
 };
+
+const checkLoggedIn = Reflect.get(Session.prototype, 'checkLoggedIn');
+Session.prototype.checkLoggedIn = async function () {
+	const sids = (this.context.request.headers.cookie || '').split(';')
+		.map(part => part.trim().split('='))
+		.filter(([name]) => name === 'sid')
+		.map(([, value]) => decodeURIComponent(value));
+	if (this.context.body.sid || sids.length < 2) return checkLoggedIn.call(this);
+	for (const sid of sids) {
+		(this.cookies as Map<string, string>).set('sid', sid);
+		const user = await checkLoggedIn.call(this);
+		if (user) {
+			this.context.response.removeHeader('Set-Cookie');
+			return user;
+		}
+	}
+	return null;
+};
