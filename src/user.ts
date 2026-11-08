@@ -205,10 +205,7 @@ export class Session {
 			forceUsertype = '5';
 		}
 		let userType;
-		const ownsName = user.loggedIn === userid || !!user.loggedIn && !!await discordLinks.selectOne()`
-			WHERE userid = ${userid} AND discordid = (
-				SELECT discordid FROM "${discordLinks.name}" WHERE userid = ${user.loggedIn}
-			)`;
+		const ownsName = await Session.ownsName(user.loggedIn, userid);
 		const userData = ownsName ? await users.get(userid, SQL`banstate, registertime, logintime`) : null;
 		const { banstate, group, registertime, logintime } = userData || {
 			banstate: 0, registertime: 0, logintime: 0, group: 0,
@@ -323,6 +320,12 @@ export class Session {
 		}
 
 		return data + ';' + await signAsync('RSA-SHA1', data, Config.privatekey);
+	}
+	static async ownsName(loggedIn: string, userid: string) {
+		return loggedIn === userid || !!loggedIn && !!await discordLinks.selectOne()`
+			WHERE userid = ${userid} AND discordid = (
+				SELECT discordid FROM "${discordLinks.name}" WHERE userid = ${loggedIn}
+			)`;
 	}
 	static getBannedNameTerms() {
 		return [
