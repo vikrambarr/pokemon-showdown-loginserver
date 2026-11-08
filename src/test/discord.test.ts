@@ -179,6 +179,16 @@ void suite('Discord login', () => {
 		}
 	});
 
+	void test('searches private replays of every name linked to the Discord account', async () => {
+		const { cookie } = await register(ticket(), 'DiscordFixture');
+		await act('discord/addname', { ...SERVER, userid: 'discordfixture', username: 'DiscordAlt' });
+		const search = async (username: string) => JSON.parse((await (await fetch(
+			`${origin}/api/replays/searchprivate?username=${username}`, { headers: { cookie: cookie.split(';')[0] } }
+		)).text()).slice(1));
+		assert(Array.isArray(await search('discordalt')));
+		assert.match((await search('discordstranger')).actionerror, /Access denied/);
+	});
+
 	void test('lists the names linked to a Discord account for servers only', async () => {
 		await register(ticket(), 'DiscordFixture');
 		await act('discord/addname', { ...SERVER, userid: 'discordfixture', username: 'DiscordAlt' });
