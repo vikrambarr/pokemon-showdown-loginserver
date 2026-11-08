@@ -129,6 +129,7 @@ export const Discord = new class {
 
 	async logIn(context: ActionContext, username: string, challstr: string) {
 		const { session } = context;
+		const user = await context.getUser();
 		await session.logout();
 		session.sidhash = await session.makeSid();
 		session.session = (await tables.sessions.insert({
@@ -138,7 +139,7 @@ export const Discord = new class {
 			timeout: time() + 2 * 7 * 24 * 60 * 60,
 			ip: context.getIp(),
 		})).insertId || 0;
-		(await context.getUser()).login(username);
+		await user.login(username);
 		await session.setSid();
 		return session.getAssertion(toID(username), Config.challengekeyid, null, challstr);
 	}
@@ -186,7 +187,7 @@ export const discordActions: { [k: string]: QueryHandler } = {
 		if (this.request.method !== 'POST') {
 			throw new ActionError("Registering a Discord account requires POST.");
 		}
-		if (!OAuth.isSameOriginRequest(this.request.headers)) {
+		if (!OAuth.isSameOriginRequest(this)) {
 			throw new ActionError("Registering a Discord account requires a same-origin request.");
 		}
 		const { discordid, challstr, serverid } = Discord.unseal(params.ticket);
