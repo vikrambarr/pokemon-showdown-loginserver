@@ -9,7 +9,7 @@ import * as tables from './tables.ts';
 import { Session } from './user.ts';
 import { escapeHTML, time, toID } from './utils.ts';
 
-type DiscordUser = { id: string, username: string, global_name: string | null };
+type DiscordUser = { id: string, username: string, global_name: string | null, avatar: string | null };
 
 export const Discord = new class {
 	readonly authorizeURL = 'https://discord.com/oauth2/authorize';
@@ -93,7 +93,7 @@ export const Discord = new class {
 		if (!data?.id || !data.username) {
 			throw new ActionError("Could not read your Discord account. Please try again.");
 		}
-		return { id: data.id, username: data.username, global_name: data.global_name || null };
+		return { id: data.id, username: data.username, global_name: data.global_name || null, avatar: data.avatar || null };
 	}
 
 	suggestName(user: DiscordUser) {
@@ -104,6 +104,58 @@ export const Discord = new class {
 			}
 		}
 		return '';
+	}
+
+	saveProfile(user: DiscordUser) {
+		return tables.discordProfiles.set(user.id, {
+			username: user.username, globalname: user.global_name, avatar: user.avatar, time: time(),
+		});
+	}
+
+	avatarURL(discordid: string, avatar: string | null) {
+		return avatar ? `https://cdn.discordapp.com/avatars/${discordid}/${avatar}.png?size=64` :
+			`https://cdn.discordapp.com/embed/avatars/${Number((BigInt(discordid) >> 22n) % 6n)}.png`;
+	}
+
+	async profiles(ids: string[]) {
+		ids = [...new Set(ids.filter(id => /^\d{1,20}$/.test(id)))].slice(0, 100);
+		if (!ids.length) return [];
+		const links = await tables.discordLinks.selectAll(['userid', 'discordid'])`WHERE discordid IN (${ids})`;
+		const userids = links.map(link => link.userid);
+		const users = userids.length ?
+			await tables.users.selectAll(['userid', 'username', 'logintime'])`WHERE userid IN (${userids})` : [];
+		const profiles = await tables.discordProfiles.selectAll()`WHERE discordid IN (${ids})`;
+		return ids.map(discordid => {
+			const names = users.filter(user => links.some(link => link.discordid === discordid && link.userid === user.userid))
+				.sort((a, b) => Number(b.logintime || 0) - Number(a.logintime || 0));
+			const profile = profiles.find(each => each.discordid === discordid);
+			if (!names.length) return null;
+			return {
+				discordid, name: names[0].username, names: names.map(user => user.username),
+				username: profile?.username || null, globalname: profile?.globalname || null,
+				avatar: this.avatarURL(discordid, profile?.avatar || null),
+			};
+		}).filter(Boolean);
+	}
+
+	async search(query: string) {
+		const id = toID(query);
+		const text = query.trim().slice(0, 32);
+		if (!id && !text) return [];
+		const found = new Set<string>();
+		for (const link of await tables.discordLinks.selectAll(['discordid'])`WHERE userid LIKE ${`%${id}%`} LIMIT 20`) {
+			found.add(link.discordid);
+		}
+		const like = `%${text}%`;
+		const profiles = await tables.discordProfiles.selectAll(['discordid'])`
+			WHERE username LIKE ${like} OR globalname LIKE ${like} LIMIT 20`;
+		for (const profile of profiles) found.add(profile.discordid);
+		const rank = (profile: { name: string, names: string[], username: string | null, globalname: string | null }) => {
+			const all = [...profile.names, profile.username || '', profile.globalname || ''].map(toID);
+			return all.includes(id) ? 0 : all.some(each => each.startsWith(id)) ? 1 : 2;
+		};
+		const results = await this.profiles([...found]);
+		return results.sort((a, b) => rank(a!) - rank(b!) || a!.name.localeCompare(b!.name)).slice(0, 10);
 	}
 
 	getLinkedUser(discordid: string) {
@@ -168,11 +220,15 @@ export const discordActions: { [k: string]: QueryHandler } = {
 			params.serverid = serverid;
 			const discordUser = await Discord.fetchUser(await Discord.exchangeCode(params.code));
 			const account = await Discord.getLinkedUser(discordUser.id);
+			if (account) await Discord.saveProfile(discordUser);
 			values = account ? {
 				username: account.username,
 				assertion: await Discord.logIn(this, account.username, challstr),
 			} : {
-				ticket: Discord.seal({ discordid: discordUser.id, challstr, serverid }),
+				ticket: Discord.seal({
+					discordid: discordUser.id, challstr, serverid,
+					username: discordUser.username, globalname: discordUser.global_name || '', avatar: discordUser.avatar || '',
+				}),
 				suggestion: Discord.suggestName(discordUser),
 			};
 		} catch (e) {
@@ -190,13 +246,16 @@ export const discordActions: { [k: string]: QueryHandler } = {
 		if (!OAuth.isSameOriginRequest(this)) {
 			throw new ActionError("Registering a Discord account requires a same-origin request.");
 		}
-		const { discordid, challstr, serverid } = Discord.unseal(params.ticket);
+		const { discordid, challstr, serverid, username: discordname, globalname, avatar } = Discord.unseal(params.ticket);
 		params.serverid = serverid;
 		if (await Discord.getLinkedUser(discordid)) {
 			throw new ActionError(`This Discord account is already linked to an account.`);
 		}
 		const username = params.username || "";
 		const userid = await Discord.link(discordid, username, this.getIp());
+		if (discordname) {
+			await Discord.saveProfile({ id: discordid, username: discordname, global_name: globalname || null, avatar: avatar || null });
+		}
 		const assertion = await Discord.logIn(this, username, challstr);
 		return { actionsuccess: !assertion.startsWith(';'), assertion, curuser: { loggedin: true, username, userid } };
 	},
@@ -216,6 +275,16 @@ export const discordActions: { [k: string]: QueryHandler } = {
 		if (!discordid) return { names: [] };
 		const links = await tables.discordLinks.selectAll(['userid'])`WHERE discordid = ${discordid} ORDER BY time`;
 		return { discordid, names: links.map(link => link.userid) };
+	},
+
+	async 'discord/profiles'(params) {
+		await this.requireServer();
+		return { profiles: await Discord.profiles((params.ids || '').split(',')) };
+	},
+
+	async 'discord/search'(params) {
+		await this.requireServer();
+		return { profiles: await Discord.search(params.query || '') };
 	},
 };
 

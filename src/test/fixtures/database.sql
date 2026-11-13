@@ -81,6 +81,14 @@ CREATE TABLE discord (
 	time INTEGER NOT NULL
 );
 
+CREATE TABLE discordprofiles (
+	discordid TEXT PRIMARY KEY,
+	username TEXT NOT NULL,
+	globalname TEXT,
+	avatar TEXT,
+	time INTEGER NOT NULL
+);
+
 CREATE TABLE usermodlog (
 	entryid INTEGER PRIMARY KEY AUTOINCREMENT,
 	userid TEXT NOT NULL,

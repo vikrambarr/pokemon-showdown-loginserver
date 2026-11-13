@@ -17,7 +17,9 @@ void suite('Discord login', () => {
 	let origin = '';
 	let oldPrivateKey: string;
 
-	const ticket = (discordid = DISCORD_ID) => Discord.seal({ discordid, challstr: 'discordchallenge' });
+	const ticket = (discordid = DISCORD_ID, profile: { [k: string]: string } = {}) => (
+		Discord.seal({ discordid, challstr: 'discordchallenge', ...profile })
+	);
 	const act = async (name: string, params: { [k: string]: string } = {}) => (await server.request(name, params)).result;
 
 	async function register(sealed: string, username: string, headers: { [k: string]: string } = { origin }) {
@@ -53,6 +55,7 @@ void suite('Discord login', () => {
 	void beforeEach(async () => {
 		Config.discordonly = false;
 		await tables.discordLinks.deleteAll()``;
+		await tables.discordProfiles.deleteAll()``;
 		await tables.users.deleteAll()`WHERE userid LIKE 'discord%'`;
 	});
 
@@ -81,7 +84,7 @@ void suite('Discord login', () => {
 
 	void test('suggests a username from the Discord handle', () => {
 		const suggest = (username: string, globalName: string | null = null) => (
-			Discord.suggestName({ id: DISCORD_ID, username, global_name: globalName })
+			Discord.suggestName({ id: DISCORD_ID, username, global_name: globalName, avatar: null })
 		);
 		assert.equal(suggest('some.handle_1'), 'somehandle1');
 		assert.equal(suggest('._.', 'Red'), 'red');
@@ -199,5 +202,26 @@ void suite('Discord login', () => {
 			});
 		}
 		assert.deepEqual(await act('discord/names', { ...SERVER, userid: 'discordnobody' }), { names: [] });
+	});
+
+	void test('saves the Discord profile and finds accounts by any of their names, for servers only', async () => {
+		const profile = { username: 'pixel.artist', globalname: 'Pixel Artist', avatar: 'abc123' };
+		await register(ticket(DISCORD_ID, profile), 'DiscordFixture');
+		await act('discord/addname', { ...SERVER, userid: 'discordfixture', username: 'DiscordAlt' });
+		await register(ticket('223456789012345678'), 'DiscordOther');
+		assert.match((await act('discord/search', { query: 'pixel' })).actionerror, /registered server/);
+		const [saved] = (await act('discord/profiles', { ...SERVER, ids: `${DISCORD_ID},999,notanid` })).profiles;
+		assert.deepEqual(saved, {
+			discordid: DISCORD_ID, name: 'DiscordFixture', names: ['DiscordFixture', 'DiscordAlt'], username: 'pixel.artist',
+			globalname: 'Pixel Artist', avatar: `https://cdn.discordapp.com/avatars/${DISCORD_ID}/abc123.png?size=64`,
+		});
+		for (const query of ['Pixel Artist', 'pixel.art', 'discordalt', 'Discord Fix']) {
+			const found = (await act('discord/search', { ...SERVER, query })).profiles;
+			assert.equal(found[0]?.discordid, DISCORD_ID, query);
+		}
+		const both = (await act('discord/search', { ...SERVER, query: 'discord' })).profiles;
+		assert.deepEqual(both.map((each: { name: string }) => each.name).sort(), ['DiscordFixture', 'DiscordOther']);
+		assert.match(both.find((each: { name: string }) => each.name === 'DiscordOther').avatar, /embed\/avatars\/\d\.png$/);
+		assert.deepEqual((await act('discord/search', { ...SERVER, query: 'zzzz' })).profiles, []);
 	});
 });

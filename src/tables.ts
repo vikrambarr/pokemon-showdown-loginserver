@@ -70,6 +70,14 @@ export const discordLinks = loginDB.getTable<{
 	time: number,
 }>('discord', 'userid');
 
+export const discordProfiles = loginDB.getTable<{
+	discordid: string,
+	username: string,
+	globalname: string | null,
+	avatar: string | null,
+	time: number,
+}>('discordprofiles', 'discordid');
+
 export const ladder = ladderDB.getTable<
 	LadderEntry
 >('ladder', 'entryid');
